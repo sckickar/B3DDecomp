@@ -16,18 +16,33 @@ abstract class Variable
             ? new ArrayElementVariable(this, index)
             : null;
 
-    protected readonly List<FieldVariable> fields = new List<FieldVariable>();
+    protected FieldVariable[]? fields = null;
     public IReadOnlyList<FieldVariable> Fields
     {
         get
         {
-            if (fields.Count == 0 && DeclType is { IsArrayType: false, IsCustomType: true })
+            if (fields is not { Length: > 0 } && DeclType is { IsArrayType: false, IsCustomType: true })
             {
                 var customType = CustomType.GetTypeMatchingDeclType(DeclType);
-                fields.AddRange(customType.Fields.Select(f => new FieldVariable(this, f)));
+                fields = customType.Fields.Select(f => new FieldVariable(this, f)).ToArray();
             }
-            return fields;
+
+            return fields ?? Array.Empty<FieldVariable>();
         }
+    }
+
+    public bool CanBeSourceOfPropagation()
+    {
+        if (DeclType == DeclType.Unknown) { return false; }
+
+        if (this is Function.Parameter { Owner: var owner }
+            && DeclType == DeclType.Pointer
+            && owner.Name.EndsWith("__LIBS", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     protected Variable(string name)

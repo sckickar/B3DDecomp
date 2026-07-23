@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
+using System.Globalization;
 using B3DDecompUtils;
 using Blitz3DDecomp.HighLevel;
 using Blitz3DDecomp.HighLevel.ComparisonResults;
@@ -35,14 +36,14 @@ static class ConvertConstantsToFinalRepresentation
             {
                 return new ConstantExpression("NAN");
             }
-            string stringRepresentation = floatValue.ToString("0.0" + new string('#', 99));
+            string stringRepresentation = floatValue.ToString("0.0" + new string('#', 99), CultureInfo.InvariantCulture);
             if (stringRepresentation.IndexOf('.', StringComparison.Ordinal) is >= 0 and var indexOfDecimalPoint)
             {
                 var wholePortion = stringRepresentation[..indexOfDecimalPoint];
                 var fraction = stringRepresentation[(indexOfDecimalPoint+1)..];
                 if (wholePortion.Length <= 3 && fraction.Length >= 4)
                 {
-                    var inverseStringRepresentation = (1f / floatValue).ToString("0.0" + new string('#', 99));
+                    var inverseStringRepresentation = (1f / floatValue).ToString("0.0" + new string('#', 99), CultureInfo.InvariantCulture);
                     if (inverseStringRepresentation.Length < stringRepresentation.Length)
                     {
                         return new DivideExpression(
@@ -93,6 +94,7 @@ static class ConvertConstantsToFinalRepresentation
                 case AfterExpression afterExpression:
                     return extractType(afterExpression.OriginalExpression);
                 case AndExpression:
+                case LogicalAndExpression:
                     return DeclType.Int;
                 case BeforeExpression beforeExpression:
                     return extractType(beforeExpression.OriginalExpression);
@@ -126,6 +128,7 @@ static class ConvertConstantsToFinalRepresentation
                     return extractType(multiplyExpression.Lhs) ?? extractType(multiplyExpression.Rhs);
                 case BooleanExpression:
                 case OrExpression:
+                case LogicalOrExpression:
                 case ShiftLeftExpression:
                 case ShiftRightSignedExpression:
                 case ShiftRightUnsignedExpression:
@@ -174,6 +177,10 @@ static class ConvertConstantsToFinalRepresentation
                     return new AndExpression(
                         map(andExpression.Lhs, DeclType.Int),
                         map(andExpression.Rhs, DeclType.Int));
+                case LogicalAndExpression logicalAndExpression:
+                    return new AndExpression(
+                        map(logicalAndExpression.Lhs, DeclType.Int),
+                        map(logicalAndExpression.Rhs, DeclType.Int));
                 case BeforeExpression beforeExpression:
                     return new BeforeExpression(map(beforeExpression.OriginalExpression, declType));
                 case CallExpression callExpression:
@@ -283,6 +290,10 @@ static class ConvertConstantsToFinalRepresentation
                     return new OrExpression(
                         map(orExpression.Lhs, DeclType.Int),
                         map(orExpression.Rhs, DeclType.Int));
+                case LogicalOrExpression logicalOrExpression:
+                    return new OrExpression(
+                        map(logicalOrExpression.Lhs, DeclType.Int),
+                        map(logicalOrExpression.Rhs, DeclType.Int));
                 case ShiftLeftExpression shiftLeftExpression:
                     return new ShiftLeftExpression(
                         map(shiftLeftExpression.Lhs, DeclType.Int),

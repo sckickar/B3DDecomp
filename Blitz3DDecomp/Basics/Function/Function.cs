@@ -11,10 +11,12 @@ sealed class Function
 {
     public sealed class Parameter : VariableWithOwnType
     {
+        public readonly Function Owner;
         public readonly int Index;
 
-        public Parameter(string name, int index) : base(name)
+        public Parameter(Function owner, string name, int index) : base(name)
         {
+            Owner = owner;
             Index = index;
         }
 
@@ -217,14 +219,15 @@ sealed class Function
         }
 
         var newFunction = new Function($"_builtIn_f{symbol.FunctionName}", 0) { ReturnType = symbol.ReturnType };
-        newFunction.Parameters.Clear(); newFunction.Parameters.AddRange(symbol.Parameters.Select((p, i) => new Parameter(p.Name, i) { DeclType = p.DeclType }));
+        newFunction.Parameters.Clear();
+        newFunction.Parameters.AddRange(symbol.Parameters.Select((p, i) => new Parameter(newFunction, p.Name, i) { DeclType = p.DeclType }));
         return newFunction;
     }
 
     public Function(string name, int argCount) : this(name, Array.Empty<Instruction>(), Array.Empty<IngestCodeFiles.TempSection>())
     {
         Parameters = Enumerable.Range(0, argCount)
-            .Select(i => new Parameter($"arg{i}", i) { DeclType = DeclType.Unknown })
+            .Select(i => new Parameter(this, $"arg{i}", i) { DeclType = DeclType.Unknown })
             .ToList();
     }
 
@@ -236,14 +239,18 @@ sealed class Function
         }
     }
 
-    public Function(string name, IReadOnlyList<Instruction> instructions, IReadOnlyList<IngestCodeFiles.TempSection> assemblySections)
+    public Function(string name, IReadOnlyList<Instruction> instructions, IngestCodeFiles.TempSection[] assemblySections)
     {
         Name = name;
         Instructions = instructions.ToImmutableArray();
         var constructedSections = new List<AssemblySection>();
         int prevIndex = instructions.Count;
-        foreach (var section in assemblySections.OrderByDescending(s => s.StartIndex))
+        foreach (var section in assemblySections.Reverse())
         {
+            if (prevIndex < section.StartIndex)
+            {
+                throw new Exception($"{name}'s assembly sections are in the wrong order!");
+            }
             constructedSections.Insert(0, new AssemblySection(this, section.Name, section.StartIndex..prevIndex));
             prevIndex = section.StartIndex;
         }
@@ -259,5 +266,42 @@ sealed class Function
     {
         return Name + ReturnType.Suffix + "("
                + string.Join(", ", Parameters) + ")";
+    }
+
+    public bool CanReturnTypeBeSourceOfPropagation()
+    {
+        if (ReturnType == DeclType.Unknown) { return false; }
+
+        if (ReturnType == DeclType.Pointer
+            && Name.EndsWith("__LIBS", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    public void RemoveUnreferencedHighLevelSections()
+    {
+        var referencedSectionNames = HighLevelStatements
+            .OfType<JumpStatement>()
+            .Select(js => js.SectionName)
+            .Distinct()
+            .ToHashSet();
+        var unreferencedSections = HighLevelSections.Skip(1).Where(s => !referencedSectionNames.Contains(s.Name)).ToArray();
+
+        if (unreferencedSections.Length == 0) { return; }
+        
+        //Console.WriteLine($"{Name}: removing {unreferencedSections.Length} sections");
+        foreach (var section in unreferencedSections)
+        {
+            var sectionIndex = HighLevelSections.IndexOf(section);
+            if (sectionIndex <= 0) { continue; }
+
+            int previousIndex = sectionIndex - 1;
+
+            HighLevelSections[previousIndex].Statements.IncreaseCount(section.Statements.Count);
+            HighLevelSections.RemoveAt(sectionIndex);
+        }
     }
 }

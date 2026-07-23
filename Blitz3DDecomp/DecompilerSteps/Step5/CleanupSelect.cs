@@ -31,10 +31,11 @@ static class CleanupSelect
             try
             {
                 var chainEnd = outerLoopIndex - 1;
+                var indexAfterChainEnd = outerLoopIndex;
                 if (chainStart < 0 || chainEnd < 0) { return; }
                 if (chainStart == chainEnd) { return; }
                 function.FindSectionForStatementIndex(chainStart, out var startSection, out var indexInStartSection);
-                function.FindSectionForStatementIndex(chainEnd, out var endSection, out _);
+                function.FindSectionForStatementIndex(chainEnd, out var endSection, out var indexInEndSection);
                 if (startSection != endSection) { return; }
 
                 var chain = function.HighLevelStatements.Skip(chainStart).Take(chainEnd - chainStart + 1).ToArray();
@@ -104,11 +105,26 @@ static class CleanupSelect
                     return;
                 }
 
-                // Check that all cases actually have this same unconditional jump
+                var sectionAfterSelectBlock = sectionsByName[statementToRemoveEverywhere.SectionName];
+
+                // We might've been overzealous with the counting of cases,
+                // let's check for any that exist past the end of the Select block
                 for (var j = 0; j < allCaseSections.Length; j++)
                 {
                     var caseSection = allCaseSections[j];
-                    var nextSection = j < allCaseSections.Length - 1 ? allCaseSections[j + 1] : sectionsByName[statementToRemoveEverywhere.SectionName];
+
+                    if (sectionAfterSelectBlock.StartIndex <= caseSection.StartIndex)
+                    {
+                        // Sections exist past the end, this is not a Select block!
+                        return;
+                    }
+                }
+
+                // For good measure, check that the remaining cases actually
+                // have the Goto that the end of all cases should have
+                for (var j = 0; j < allCaseSections.Length; j++)
+                {
+                    var nextSection = j < allCaseSections.Length - 1 ? allCaseSections[j + 1] : sectionAfterSelectBlock;
 
                     int lastStatementOfCase = nextSection.StartIndex - 1;
                     function.FindSectionForStatementIndex(lastStatementOfCase, out var lastSectionOfCase, out _);
@@ -119,11 +135,11 @@ static class CleanupSelect
                     }
                 }
 
-                // Check that the last case actually comes before the end of the Select statement block
-                var lastCaseSection = cases.Keys.Select(key => sectionsByName[key]).MaxBy(s => s.StartIndex)!;
-                if (sectionsByName[statementToRemoveEverywhere.SectionName].StartIndex < lastCaseSection.StartIndex)
+                if (cases.Values.Sum(l => l.Count) < 2)
                 {
-                    Debugger.Break();
+                    // Don't treat a chain with fewer than two valid checks on the same variable as a Select statement,
+                    // even if it was one originally it'd be no clearer than just an If statement
+                    return;
                 }
 
                 // Remove gotos
@@ -167,6 +183,11 @@ static class CleanupSelect
 
                 // Regenerate default case sections and insert End Select
                 var indexToInsertDefault = function.HighLevelSections.IndexOf(sectionsByName[statementToRemoveEverywhere.SectionName]);
+                while (indexToInsertDefault > 0 && function.HighLevelSections[indexToInsertDefault - 1].IsEmpty)
+                {
+                    indexToInsertDefault--;
+                }
+
                 foreach (var tempSection in tempSections)
                 {
                     var newSection = new HighLevelSection(function, tempSection.Name);
@@ -202,7 +223,7 @@ static class CleanupSelect
                     var caseSection = allCaseSections[j];
                     var caseSectionIndex = function.HighLevelSections.IndexOf(caseSection);
 
-                    var newSection = new HighLevelSection(function, $"_selectCase{currentSectionNumber}");
+                    var newSection = new HighLevelSection(function, $"_selectCase{currentSectionNumber}{caseSection.Name}");
                     currentSectionNumber++;
                     function.HighLevelSections.Insert(caseSectionIndex, newSection);
 
@@ -261,30 +282,6 @@ static class CleanupSelect
                     handleChain(ref i);
                     continue;
                 }
-            }
-        }
-
-        // Push Case statements above every empty section that's next to them
-        // so remaining gotos can still work.
-        // Assembly sections are checked for emptiness because that's representative
-        // of the real semantics of the program, some non-empty sections may decompile
-        // down to no statements at all.
-        for (int i = 0; i < function.HighLevelSections.Count; i++)
-        {
-            var section = function.HighLevelSections[i];
-            if (section.Statements.Count != 1) { continue; }
-            if (section.Statements[0] is not CaseStatement) { continue; }
-
-            var reinsertIndex = i;
-            while (!function.AssemblySectionsByName.TryGetValue(function.HighLevelSections[reinsertIndex - 1].Name, out var assemblySection)
-                   || assemblySection.Instructions.Length == 0)
-            {
-                reinsertIndex--;
-            }
-            if (reinsertIndex < i)
-            {
-                function.HighLevelSections.RemoveAt(i);
-                function.HighLevelSections.Insert(reinsertIndex, section);
             }
         }
 

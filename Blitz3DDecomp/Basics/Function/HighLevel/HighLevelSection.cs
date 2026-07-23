@@ -5,7 +5,7 @@ namespace Blitz3DDecomp.HighLevel;
 
 sealed class HighLevelSection
 {
-    private sealed class SubList : IList<Statement>
+    public sealed class SubList : IList<Statement>
     {
         private readonly HighLevelSection owner;
 
@@ -104,6 +104,11 @@ sealed class HighLevelSection
             count--;
         }
 
+        public void IncreaseCount(int amount)
+        {
+            count += amount;
+        }
+
         public Statement this[int index]
         {
             get
@@ -125,7 +130,7 @@ sealed class HighLevelSection
     }
 
     public readonly string Name;
-    public readonly IList<Statement> Statements;
+    public readonly SubList Statements;
     public readonly Function Owner;
 
     public int StartIndex
@@ -166,6 +171,9 @@ sealed class HighLevelSection
 
     public AssemblySection? LinkedAssemblySection
         => Owner.AssemblySectionsByName.GetValueOrDefault(Name);
+
+    public bool IsEmpty
+        => Statements.Count == 0 && LinkedAssemblySection is not { Instructions.Length: > 0 };
 
     public HighLevelSection(Function owner, string name)
     {

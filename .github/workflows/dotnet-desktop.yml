@@ -6,35 +6,31 @@ on:
       - 'v*'
 
 jobs:
-  build-and-release:
+  deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
       packages: write
+      contents: write 
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-          # Uncomment if you are pushing to a private NuGet feed
-          # source-url: https://nuget.pkg.github.com/<owner>/index.json
-        env:
-          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish project
-        run: dotnet publish --configuration Release -o ./publish_output
+      - name: Publish Windows Executable
+        run: dotnet publish Blitz3DDecomp.sln --configuration Release -r win-x64 --self-contained true -o ./publish_output
 
       - name: Zip the build output
         run: |
           cd publish_output
-          zip -r ../app-release.zip .
+          zip -r ../B3DDecomp-Release.zip .
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: app-release.zip
+          files: B3DDecomp-Release.zip
